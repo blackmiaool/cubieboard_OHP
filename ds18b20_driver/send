@@ -1,0 +1,10 @@
+#!/usr/bin/expect -f
+spawn scp scull.ko linaro@192.168.123.6:~/
+set timeout 20000
+expect "word:"
+set timeout 300
+send "linaro\r"
+set timeout 1000
+send "exit\r"
+expect eof
+
