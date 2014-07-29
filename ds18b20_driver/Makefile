@@ -1,6 +1,6 @@
 ifneq ($(KERNELRELEASE),)
-	scull-objs := scull.o sc.o
-	obj-m := scull.o 
+	ds18b20-objs := ds_core.o ds18b20op.o
+	obj-m := ds18b20.o 
 else
 	KERNELDIR ?=/home/blackmiaool/pro/cb/kernel-source
 	PWD := $(shell pwd)

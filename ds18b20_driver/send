@@ -1,5 +1,5 @@
 #!/usr/bin/expect -f
-spawn scp scull.ko linaro@192.168.123.6:~/
+spawn scp ds18b20.ko linaro@192.168.123.6:~/
 set timeout 20000
 expect "word:"
 set timeout 300
