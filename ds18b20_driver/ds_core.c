@@ -62,7 +62,8 @@ int ds18b20_open(struct inode *inode,struct file *filp)
     struct ds18b20_dev *dev;
     dev=container_of(inode->i_cdev,struct ds18b20_dev,cdev);
     filp->private_data=dev;
-    setv((u32)dev->gaddr,0x104,3,1,16);//PH20(LED)as OUTPUT
+    DS18B20_Init();
+  //  setv((u32)dev->gaddr,0x104,3,1,16);//PH20(LED)as OUTPUT
     setv((u32)dev->gaddr,0x6c,3,0,0);//PD0_SELECT as input
 
     return 0;
@@ -88,18 +89,15 @@ ssize_t ds18b20_read(struct file *filp,char __user *buf, size_t count, \
     struct ds18b20_dev *dev=filp->private_data;
     u8 state[2];
   //  printk("cnt:%d,pos:%d\n",count,*f_pos);
-    printk("temp=%d\n",DS18B20_Get_Temp());
+    uint16_t temp=DS18B20_Get_Temp();
+    printk("temp=%d\n",temp);
     if(*f_pos>=2)
     {
         return 0;
     }
-    state[0]=(ioa(dev->gaddr,0x7c)&(1))+0x30;
-    state[1]=0;
-    copy_to_user(buf,state,1);
-//    if(*f_pos>=1)
-//        return count ? -ENXIO:0;
-//    if(count>1-*f_pos)
-//        count=1-*f_pos;
+    state[0]=temp/256;
+    state[1]=temp%256;
+    copy_to_user(buf,state,2);
     *f_pos+=2;
 
     return 2;
