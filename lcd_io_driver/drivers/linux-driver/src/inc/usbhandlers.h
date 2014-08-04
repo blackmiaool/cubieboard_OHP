@@ -18,6 +18,7 @@
 int register_usb_handlers(void);
 void unregister_usb_handlers(void);
 
+
 int rpusbdisp_usb_get_device_count(void);
 
 struct device * rpusbdisp_usb_get_devicehandle(struct rpusbdisp_dev *);

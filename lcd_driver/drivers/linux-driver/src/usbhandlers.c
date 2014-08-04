@@ -563,7 +563,7 @@ static int _bitblt_encoder_flush(struct bitblt_encoding_context_t * ctx, struct 
     // submit the final ticket
 
     size_t transfer_size = ctx->packet_pos * dev->disp_out_ep_max_size + ctx->encoded_pos;
-    
+    printk("flush");
     if (transfer_size) {
         ctx->ticket->transfer_urb->transfer_buffer_length = transfer_size;
         
@@ -769,15 +769,18 @@ int rpusbdisp_usb_try_send_image(struct rpusbdisp_dev * dev, const pixel_type_t 
 
     // estimate how many tickets are needed
     const size_t image_size = (right-x + 1)* (bottom-y+1) * (RP_DISP_DEFAULT_PIXEL_BITS/8);
-
     // do not transmit zero size image
+        printk("image\n");
+    printk("1sx=%d",x);
+    printk("y=%d",y);
+    printk("right=%d",right);
+    printk("bottom=%d",bottom);
+    printk("line_width=%d",line_width);
     if (!image_size) return 1;
 
-    if (dev->device_fwver >= RP_DISP_FEATURE_RLE_FWVERSION) {
-        rlemode = 1;
-    } else {
+   
         rlemode = 0;
-    }
+    
     
     if (!_bitblt_encoder_init(&encoder_ctx, dev, image_size, rlemode)) return 0;
 

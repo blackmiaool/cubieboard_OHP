@@ -13,7 +13,7 @@
 
 
 DRIVER_NAME := rp_usbdisplay
-KERNEL_SOURCE_DIR ?= /lib/modules/`uname -r`/build
+KERNEL_SOURCE_DIR ?= /home/blackmiaool/pro/cb/kernel-source
 
 EXTRA_CFLAGS += -I$(PWD)/src -I$(PWD)/../common
 
@@ -27,7 +27,7 @@ DRIVER_FILES := src/main.o \
 $(DRIVER_NAME)-objs:= $(DRIVER_FILES)
 
 modules:
-	$(MAKE) -C $(KERNEL_SOURCE_DIR) KCPPFLAGS="$(EXTRA_CFLAGS)" M=$(PWD) modules
+	$(MAKE) ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- -C $(KERNEL_SOURCE_DIR) KCPPFLAGS="$(EXTRA_CFLAGS)" M=$(PWD) modules
 
 modules_install:
 	$(MAKE) -C $(KERNEL_SOURCE_DIR) M=$(PWD) modules_install

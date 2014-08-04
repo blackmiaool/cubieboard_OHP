@@ -24,9 +24,9 @@ static const struct file_operations lcd_fops = {
         .read =         lcd_read,
         .write =        lcd_write,
         .open =         lcd_open,
-	.unlocked_ioctl = lcd_ioctl,
+    .unlocked_ioctl = lcd_ioctl,
         .release =      lcd_release,
-        .llseek =	 noop_llseek,
+        .llseek =    noop_llseek,
 };
 
 /*
@@ -48,23 +48,23 @@ MODULE_PARM_DESC(fps,"Specify the frame rate used to refresh the display (overri
 
 static int __init usb_disp_init(void)
 {
-	int result;
+    int result;
 
         if (fps == 0) {
-	    /* frame rate is not set through the modprobe command. Use the value defined in the .config */
+        /* frame rate is not set through the modprobe command. Use the value defined in the .config */
 #ifdef CONFIG_RPUSBDISP_FPS
-	    fps = CONFIG_RPUSBDISP_FPS;
+        fps = CONFIG_RPUSBDISP_FPS;
 #else
-	    /* Just in case for background compliance. Maybe the Kconfig file of the driver is not integrated */
+        /* Just in case for background compliance. Maybe the Kconfig file of the driver is not integrated */
             fps = 16;
 #endif
         }
 
     do {
-	    
+        
         result = register_touch_handler();
-	    if (result) {
-		    err("touch_handler failed. Error number %d", result);
+        if (result) {
+            err("touch_handler failed. Error number %d", result);
             break;
         }        
 
@@ -75,8 +75,8 @@ static int __init usb_disp_init(void)
         }
 
         result = register_usb_handlers();
-	    if (result) {
-		    err("usb_register failed. Error number %d", result);
+        if (result) {
+            err("usb_register failed. Error number %d", result);
             break;
         }
 
@@ -84,7 +84,7 @@ static int __init usb_disp_init(void)
 
     }while(0);
 
-	return result;
+    return result;
 }
 
 
@@ -102,4 +102,3 @@ module_exit(usb_disp_exit);
 MODULE_AUTHOR("Shikai Chen <csk@live.com>");
 MODULE_DESCRIPTION(DRIVER_VERSION);
 MODULE_LICENSE(DRIVER_LICENSE_INFO);
-
