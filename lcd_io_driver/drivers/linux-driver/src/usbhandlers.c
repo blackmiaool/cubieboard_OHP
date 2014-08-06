@@ -158,25 +158,7 @@ static void _status_start_querying(struct rpusbdisp_dev * dev);
 
 
 
-static void _add_usbdev_to_list(struct rpusbdisp_dev * dev)
-{
-    mutex_lock(&_mutex_usbdevlist);
-    list_add( &dev->dev_list_node, &rpusbdisp_list );
-    atomic_inc(&_devlist_count);
-    mutex_unlock(&_mutex_usbdevlist);
 
-    wake_up(&_usblist_waitqueue);
-
-}
-
-
-static void _del_usbdev_from_list(struct rpusbdisp_dev * dev)
-{
-    mutex_lock(&_mutex_usbdevlist);
-    list_del( &dev->dev_list_node );
-    atomic_dec(&_devlist_count);
-    mutex_unlock(&_mutex_usbdevlist);
-}
 
 
 static void _on_parse_status_packet(struct rpusbdisp_dev *dev)
@@ -444,117 +426,6 @@ struct bitblt_encoding_context_t {
 } ;
 
 
-
-static int _bitblt_encoder_init(struct bitblt_encoding_context_t * ctx, struct rpusbdisp_dev * dev, size_t image_size, int rlemode)
-{
-    
-    size_t effective_payload_per_packet_size;
-    size_t packet_count;
-    size_t required_tickets_count;
-
-    size_t payload_without_header_size = sizeof(rpusbdisp_disp_bitblt_packet_t) - sizeof(rpusbdisp_disp_packet_header_t)
-                                                 + image_size;
-
-    // calc how many tickets are needed ...
-    effective_payload_per_packet_size = dev->disp_out_ep_max_size - sizeof(rpusbdisp_disp_packet_header_t);
-    
-    packet_count = (payload_without_header_size + effective_payload_per_packet_size-1) /effective_payload_per_packet_size;
-    required_tickets_count = (packet_count + dev->disp_tickets_pool.packet_size_factor-1) / dev->disp_tickets_pool.packet_size_factor;
-
-    
-    if ( required_tickets_count>RPUSBDISP_MAX_TRANSFER_TICKETS_COUNT)
-    {
-        err("required_tickets_count (%d)>RPUSBDISP_MAX_TRANSFER_TICKETS_COUNT(%d)\n", required_tickets_count, RPUSBDISP_MAX_TRANSFER_TICKETS_COUNT);
-       // BUG_ON(1);
-        return 0;
-    }
-
- 
-    
-    if (!_sell_disp_tickets(dev, &ctx->bundle, required_tickets_count)) {
-        // tickets is inadequate, try next time
-        return 0;
-    }
-
-    // init the context...
-    ctx->packet_pos = 0;
-    ctx->current_node = ctx->bundle.ticket_list.next;
-    ctx->ticket = list_entry(ctx->current_node, struct rpusbdisp_disp_ticket, ticket_list_node);
-    ctx->urbbuffer = (_u8 *)ctx->ticket->transfer_urb->transfer_buffer;
-    ctx->encoded_pos = 0;
-    ctx->rlemode = rlemode;
-    return 1;
-}
-
-
-static void _bitblt_encode_command_header(struct bitblt_encoding_context_t * ctx, struct rpusbdisp_dev * dev, int x, int y, int right, int bottom, int clear_dirty)
-{
-    rpusbdisp_disp_bitblt_packet_t * bitblt_header ;
-
-    // encoding the command header...
-       
-    bitblt_header = (rpusbdisp_disp_bitblt_packet_t *)ctx->urbbuffer;
-    bitblt_header->header.cmd_flag = ctx->rlemode?RPUSBDISP_DISPCMD_BITBLT_RLE:RPUSBDISP_DISPCMD_BITBLT;
-    bitblt_header->header.cmd_flag |= RPUSBDISP_CMD_FLAG_START;
-    if (clear_dirty) {
-        bitblt_header->header.cmd_flag |= RPUSBDISP_CMD_FLAG_CLEARDITY;
-    }
-
-    bitblt_header->x = cpu_to_le16(x);
-    bitblt_header->y = cpu_to_le16(y);
-    bitblt_header->width = cpu_to_le16(right+1-x);
-    bitblt_header->height = cpu_to_le16(bottom+1-y);
-    bitblt_header->operation = RPUSBDISP_OPERATION_COPY;
-        
-    ctx->encoded_pos = sizeof(rpusbdisp_disp_bitblt_packet_t);
-
-}
-
-
-static void _bitblt_encoder_cleanup(struct bitblt_encoding_context_t * ctx, struct rpusbdisp_dev * dev)
-{
-    struct rpusbdisp_disp_ticket * ticket;
-
-    // return unused tickets
-    while (ctx->current_node != &ctx->bundle.ticket_list) {
-
-        ticket = list_entry(ctx->current_node, struct rpusbdisp_disp_ticket, ticket_list_node);
-        ctx->current_node = ctx->current_node->next;
-
-        _return_disp_tickets(dev, ticket);
-    }
-
-}
-
-static int _bitblt_encoder_flush(struct bitblt_encoding_context_t * ctx, struct rpusbdisp_dev * dev)
-{
-    
-
-    // submit the final ticket
-
-    size_t transfer_size = ctx->packet_pos * dev->disp_out_ep_max_size + ctx->encoded_pos;
-    
-    if (transfer_size) {
-        ctx->ticket->transfer_urb->transfer_buffer_length = transfer_size;
-        
-        ctx->current_node = ctx->current_node->next;
-        if (usb_submit_urb(ctx->ticket->transfer_urb, GFP_KERNEL)) {
-            // submit failure,
-           
-            _on_display_transfer_finished(ctx->ticket->transfer_urb);
-            return 0; //abort
-        }
-    }
-
-
-    _bitblt_encoder_cleanup(ctx, dev);
-
-    return 1;
-}
-
-
-
-
 struct rle_encoder_context {
     struct bitblt_encoding_context_t * encoder_ctx;
     int is_common_section;
@@ -562,11 +433,6 @@ struct rle_encoder_context {
     pixel_type_t section_data[128];
 
 };
-
-
-
-
-
 
 
 u32 io_addr;
@@ -705,16 +571,7 @@ static int _on_alloc_disp_tickets_pool(struct rpusbdisp_dev * dev)
 
 static int _on_new_usb_device(struct rpusbdisp_dev * dev)
 {
-    // the rp-usb-display device has been verified
-    mutex_init(&dev->op_locker);
-    init_waitqueue_head(&dev->status_wait_queue);
 
-
-    dev->urb_status_query = usb_alloc_urb(0, GFP_KERNEL);
-    if (! dev->urb_status_query) {
-        dev_info(&dev->interface->dev, "Cannot allocate status query urbs.\n");
-        goto status_urb_alloc_fail;
-    }
 
     if (_on_alloc_disp_tickets_pool(dev) < 0) {
         dev_info(&dev->interface->dev, "Cannot allocate the display tickets pool.\n");
@@ -722,21 +579,10 @@ static int _on_new_usb_device(struct rpusbdisp_dev * dev)
     }
 
    
-    _add_usbdev_to_list(dev);
+    //_add_usbdev_to_list(dev);
     dev->dev_id = rpusbdisp_usb_get_device_count();
     dev->is_alive = 1;
-    dev->device_fwver = le16_to_cpu(dev->udev->descriptor.bcdDevice);
-
-    dev_info(&dev->interface->dev, "RP USB Display found (#%d), Firmware Version: %d.%02d, S/N: %s\n",
-                                dev->dev_id,
-                                (dev->device_fwver>>8),
-                                (dev->device_fwver & 0xFF),
-                                dev->udev->serial?dev->udev->serial:"(unknown)");
-
-
-    // start status querying...
-    _status_start_querying(dev);
-
+ 
     fbhandler_on_new_device(dev);
     touchhandler_on_new_device(dev);
 
@@ -771,7 +617,7 @@ static void _on_del_usb_device(struct rpusbdisp_dev * dev)
 
 
     
-    _del_usbdev_from_list(dev);
+    //_del_usbdev_from_list(dev);
     
 
     
@@ -793,103 +639,40 @@ int rpusbdisp_usb_get_device_count(void)
 static int rpusbdisp_probe(struct usb_interface *interface, const struct usb_device_id *id)
 {
 
-struct rpusbdisp_dev *dev = NULL;
-struct usb_host_interface *iface_desc;
-struct usb_endpoint_descriptor *endpoint;
-size_t buffer_size;
-int i;
-int retval = -ENOMEM;
+    struct rpusbdisp_dev *dev = NULL;
+    struct usb_host_interface *iface_desc;
+    struct usb_endpoint_descriptor *endpoint;
+    size_t buffer_size;
+    int i;
+    int retval = -ENOMEM;
 
-/* allocate memory for our device state and initialize it */
-dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-if (dev == NULL) {
-err("Out of memory");
-goto error;
-}
-io_addr=ioremap((u8 *)0x01c20800,0x400);
-lcd_init();
-dev->udev = usb_get_dev(interface_to_usbdev(interface));
-dev->interface = interface;
-
-if (le16_to_cpu(dev->udev->descriptor.bcdDevice) > 0x0200) {
-dev_warn(&interface->dev, "The device you used may requires a newer driver version to work.\n");
-}
-
-    // check for endpoints
-iface_desc = interface->cur_altsetting;
-for (i = 0; i < iface_desc->desc.bNumEndpoints; ++i) {
-endpoint = &iface_desc->endpoint[i].desc;
-
-if (!dev->status_in_ep_addr &&
-usb_endpoint_is_int_in(endpoint)) {
-// the status input endpoint has been found
-buffer_size = le16_to_cpu(endpoint->wMaxPacketSize);
-dev->status_in_ep_addr = endpoint->bEndpointAddress;
-
-}
-
-if (!dev->disp_out_ep_addr &&
-usb_endpoint_is_bulk_out(endpoint) && endpoint->wMaxPacketSize) {
-// endpoint for video output has been found
-dev->disp_out_ep_addr = endpoint->bEndpointAddress;
-            dev->disp_out_ep_max_size = le16_to_cpu(endpoint->wMaxPacketSize);
-            
-}
-}
-
-if (!(dev->status_in_ep_addr && dev->disp_out_ep_addr)) {
-err("Could not find the required endpoints\n");
-goto error;
-}
-
-    
-    /* save our data pointer in this interface device */
-usb_set_intfdata(interface, dev);
+    /* allocate memory for our device state and initialize it */
+    dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+    if (dev == NULL) {
+    err("Out of memory");
+    goto error;
+    }
+    io_addr=ioremap((u8 *)0x01c20800,0x400);
+    lcd_init();
+    dev->udev = usb_get_dev(interface_to_usbdev(interface));
+    dev->interface = interface;
+    usb_set_intfdata(interface, dev);
 
     // add the device to the list
     if (_on_new_usb_device(dev)) {
         goto error;
     }
 
+    return 0;
 
-#if 0
-
-/* we can register the device now, as it is ready */
-retval = usb_register_dev(interface, &rpusbdisp_class);
-if (retval) {
-/* something prevented us from registering this driver */
-err("Not able to get a minor for this device.");
-usb_set_intfdata(interface, NULL);
-goto error;
+    error:
+        if (dev) {
+            kfree(dev);
+        }
+    return retval;
 }
 
 
-
-/* let the user know what node this device is now attached to */
-dev_info(&interface->dev, "The RP USB Display device now attached to RP_USBDISP-%d\n",
-interface->minor);
-#endif
-
-return 0;
-
-error:
-    if (dev) {
-        kfree(dev);
-    }
-return retval;
-}
-
-
-#if 0
-static void lcd_draw_down(struct usb_lcd *dev)
-{
-int time;
-
-time = usb_wait_anchor_empty_timeout(&dev->submitted, 1000);
-if (!time)
-usb_kill_anchored_urbs(&dev->submitted);
-}
-#endif
 
 static int rpusbdisp_suspend(struct usb_interface *intf, pm_message_t message)
 {
@@ -951,47 +734,7 @@ void unregister_usb_handlers(void)
 
     // cancel the worker thread
     _working_flag = 0;
-    wake_up(&_usblist_waitqueue);
-#if 0
-if (!IS_ERR(_usb_status_polling_task)){
-kthread_stop(_usb_status_polling_task);
-}
-#endif
+
 
     usb_deregister(&usbdisp_driver);
 }
-
-
-#if 0
-
-static int _kthread_usb_status_poller_proc(void *data)
-{
-    struct list_head *pos, *q;
-
-    while (_working_flag) {
-
-        if (rpusbdisp_usb_get_device_count() < 1) {
-            // nothing to do , sleep...
-            sleep_on(&_usblist_waitqueue);
-            continue;
-        }
-
-
-        // send usb msg to query the status
-        
-        list_for_each_safe( pos, q, &rpusbdisp_list ) {
-            struct rpusbdisp_dev *current_dev;
-            current_dev = list_entry( pos, struct rpusbdisp_dev, dev_list_node );
-            
-
-            // send urbs
-            
-        }
-  
-        
-    }
-
-    return 0;
-}
-
-#endif

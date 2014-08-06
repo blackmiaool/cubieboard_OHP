@@ -110,7 +110,7 @@
 #define R192           0xC0
 #define R193           0xC1
 #define R229           0xE5		
-void lcd_init(void);
+int lcd_init(void);
 void LCD_WriteRAM_Prepare(void);
 extern u32 io_addr;
 void LCD_Fill(u16 xsta,u16 ysta,u16 xend,u16 yend,u16 *color);

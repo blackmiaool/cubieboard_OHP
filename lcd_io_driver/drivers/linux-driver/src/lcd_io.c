@@ -237,7 +237,7 @@ void LCD_DisplayOff(void)
 //³õÊŒ»¯lcd
 //žÃ³õÊŒ»¯º¯Êý¿ÉÒÔ³õÊŒ»¯ž÷ÖÖILI93XXÒºŸ§,µ«ÊÇÆäËûº¯ÊýÊÇ»ùÓÚILI9320µÄ!!!
 //ÔÚÆäËûÐÍºÅµÄÇý¶¯ÐŸÆ¬ÉÏÃ»ÓÐ²âÊÔ! 
-void lcd_init(void)
+int lcd_init(void)
 { 
 	int i=0;
     for(i=0;i<8;i++)
@@ -263,7 +263,10 @@ void lcd_init(void)
 	mdelay(50); // delay 50 ms 
 	DeviceCode = LCD_ReadReg(0x0000);   
 	printk(" LCD ID:%x\n",DeviceCode); //ŽòÓ¡LCD ID 
-	DeviceCode=0X4535;
+	if(DeviceCode!=0X4535)
+	{
+		return -1;
+	}
 	if(DeviceCode==0x9325||DeviceCode==0x9328)//ILI9325
 	{
   		LCD_WriteReg(0x00e7,0x0010);      
