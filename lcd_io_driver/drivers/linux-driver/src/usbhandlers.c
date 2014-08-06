@@ -214,30 +214,7 @@ static void _on_display_transfer_finished(struct urb *urb)
 {
     struct rpusbdisp_disp_ticket * ticket = (struct rpusbdisp_disp_ticket *)urb->context;
     struct rpusbdisp_dev * dev = ticket->binded_dev;
-    
-    int all_finished = 0;
-/* sync/async unlink faults aren't errors */
-if (urb->status) {
-
-        if (dev->is_alive) {
-            // set unsync flag
-fbhandler_set_unsync_flag(dev);
-        }
-        err("transmission failed for urb %p, error code %x\n", urb, urb->status);
-
-}
-
-    
-
-    urb->transfer_buffer_length = dev->disp_tickets_pool.packet_size_factor * dev->disp_out_ep_max_size; // reset buffer size
-
-    // insert to the available queue
-    all_finished = _return_disp_tickets(dev, ticket);
-
-    if (all_finished && !urb->status) {
-        schedule_delayed_work(&dev->disp_tickets_pool.completion_work, 0);
-    }
-    
+    schedule_delayed_work(&dev->disp_tickets_pool.completion_work, 0);
 }
 
 static void _on_status_query_finished(struct urb *urb)
@@ -478,14 +455,6 @@ static int _bitblt_encoder_init(struct bitblt_encoding_context_t * ctx, struct r
     size_t payload_without_header_size = sizeof(rpusbdisp_disp_bitblt_packet_t) - sizeof(rpusbdisp_disp_packet_header_t)
                                                  + image_size;
 
-
-
-    if (rlemode) {
-        // the worst case for RLE is 1 extra byte with each 128 pixels (since the 7bit size block can represent 128 uints)
-        payload_without_header_size += (((image_size>>1) + 0x7f)>>7);
-    }
-
-
     // calc how many tickets are needed ...
     effective_payload_per_packet_size = dev->disp_out_ep_max_size - sizeof(rpusbdisp_disp_packet_header_t);
     
@@ -584,58 +553,7 @@ static int _bitblt_encoder_flush(struct bitblt_encoding_context_t * ctx, struct 
 }
 
 
-static int _bitblt_encode_n_transfer_data(struct bitblt_encoding_context_t * ctx, struct rpusbdisp_dev * dev, const void * data, size_t count)
-{
-    const _u8 * payload_in_bytes = (const _u8 *)data;
 
-    while (count) {
-        // fill the buffer as much as possible...
-        size_t buffer_avail_length = dev->disp_out_ep_max_size - ctx->encoded_pos;
-        size_t size_to_copy = count>buffer_avail_length?buffer_avail_length:count;
-
-        memcpy(ctx->urbbuffer + ctx->encoded_pos, payload_in_bytes, size_to_copy);
-        payload_in_bytes += size_to_copy;
-        ctx->encoded_pos += size_to_copy;
-
-        
-        count -= size_to_copy;
-
-        if (buffer_avail_length == size_to_copy) {
-            // current transfer block is full
-            ctx->urbbuffer += dev->disp_out_ep_max_size;
-            
-            
-            if (++ctx->packet_pos >= dev->disp_tickets_pool.packet_size_factor) {
-                // current urb is full, send the ticket
-                ctx->current_node = ctx->current_node->next;
-                if (usb_submit_urb(ctx->ticket->transfer_urb, GFP_KERNEL)) {
-                    // submit failure,
-                  
-                    _on_display_transfer_finished(ctx->ticket->transfer_urb);
-                    return 0; //abort
-                }
-
-                
-                // a new ticket
-                ctx->packet_pos = 0;
-                
-                BUG_ON(ctx->current_node == &ctx->bundle.ticket_list);
-
-                ctx->ticket = list_entry(ctx->current_node, struct rpusbdisp_disp_ticket, ticket_list_node);
-                ctx->urbbuffer = (_u8 *)ctx->ticket->transfer_urb->transfer_buffer;
-    
-            }
-
-            // encoding the header
-            *ctx->urbbuffer = 0;
-            ((rpusbdisp_disp_packet_header_t *)ctx->urbbuffer)->cmd_flag = ctx->rlemode?RPUSBDISP_DISPCMD_BITBLT_RLE:RPUSBDISP_DISPCMD_BITBLT;
-            ctx->encoded_pos = sizeof(rpusbdisp_disp_packet_header_t);
-        
-        }
-    }
-
-    return 1;
-}
 
 struct rle_encoder_context {
     struct bitblt_encoding_context_t * encoder_ctx;
@@ -646,126 +564,16 @@ struct rle_encoder_context {
 };
 
 
-static void _rle_compress_init(struct rle_encoder_context * rle_ctx, struct bitblt_encoding_context_t * encoder_ctx, struct rpusbdisp_dev * dev)
-{
-    rle_ctx->encoder_ctx = encoder_ctx;
-    rle_ctx->is_common_section = 0;
-    rle_ctx->section_size = 0;
-    
-}
 
 
-static int _rle_flush_section(struct rle_encoder_context * rle_ctx, struct rpusbdisp_dev * dev)
-{
-
-    // flush the current section ...
-    _u8 section_header;
-    size_t section_data_len;
-
-    BUG_ON(rle_ctx->section_size > RPUSBDISP_RLE_BLOCKFLAG_SIZE_BIT + 1);
-    printk("_rle_flush_section");
-    if (rle_ctx->section_size == 0) {
-        return 1; //do not flush an empty section...
-    }
 
 
-    section_header = ((rle_ctx->section_size - 1) & RPUSBDISP_RLE_BLOCKFLAG_SIZE_BIT);
-    if (rle_ctx->is_common_section) {
-        section_header |= RPUSBDISP_RLE_BLOCKFLAG_COMMON_BIT;
-    }
-    if (!_bitblt_encode_n_transfer_data(rle_ctx->encoder_ctx, dev, &section_header, sizeof(_u8))) {
-        // abort the operation...
-        return 0;
-    }
-                
-    section_data_len = rle_ctx->is_common_section? 1:rle_ctx->section_size;
-    if (!_bitblt_encode_n_transfer_data(rle_ctx->encoder_ctx, dev, rle_ctx->section_data, sizeof(pixel_type_t) * section_data_len)) {
-        // abort the operation...
-        return 0;
-    }
-                
-    
-    // reinit the section
-    rle_ctx->is_common_section = 0;
-    rle_ctx->section_size = 0;
-    return 1;
-}
-
-static int _rle_compress_n_encode(struct rle_encoder_context * rle_ctx, struct rpusbdisp_dev * dev, pixel_type_t pixel)
-{
-#if RPUSBDISP_RLE_BLOCKFLAG_SIZE_BIT + 1 > 128
-#error "RPUSBDISP_RLE_BLOCKFLAG_SIZE_BIT + 1 > 128"
-#endif
-    if (rle_ctx->is_common_section) {
-        BUG_ON(rle_ctx->section_size == 0);
-
-        if (pixel != rle_ctx->section_data[0]) {
-            if (!_rle_flush_section(rle_ctx, dev)) {
-                return 0;
-            }
-            rle_ctx->section_size = 1;
-            rle_ctx->section_data[0] = pixel;
-        } else {
-
-            if (rle_ctx->section_size == RPUSBDISP_RLE_BLOCKFLAG_SIZE_BIT + 1) {
-                // section is full, flush it...
-                
-                if (!_rle_flush_section(rle_ctx, dev)) {
-                    return 0;
-                }
-                rle_ctx->section_size = 1;
-                rle_ctx->section_data[0] = pixel;
-
-            } else {
-                // simply increase the section size...
-                ++ rle_ctx->section_size;
-            }
-        }
-    } else {
-        // check whether the current pixel is equal to the last pixel value...
-  
-        if (rle_ctx->section_size && (pixel == rle_ctx->section_data[rle_ctx->section_size-1])) {
-            // remove the last pixel from the current section, flush the section and form a common section
-            --rle_ctx->section_size;
-
-            if (rle_ctx->section_size) {
-                // only flush a section with non-zero data
-                if (!_rle_flush_section(rle_ctx, dev)) {
-                    return 0;
-                }
-            }
-
-            // form a common section
-            rle_ctx->section_size = 2;
-            rle_ctx->section_data[0] = pixel;
-            rle_ctx->is_common_section = 1;
-        } else {
-            if (rle_ctx->section_size == RPUSBDISP_RLE_BLOCKFLAG_SIZE_BIT + 1) {
-                // section is full, flush it...
-                
-                if (!_rle_flush_section(rle_ctx, dev)) {
-                    return 0;
-                }
-
-            }
-            // include the new data
-            rle_ctx->section_data[rle_ctx->section_size++] = pixel;
-        }
-        
-
-    }
-
-
-    return 1;
-}
 
 u32 io_addr;
 int rpusbdisp_usb_try_send_image(struct rpusbdisp_dev * dev, const pixel_type_t * framebuffer, int x, int y, int right, int bottom, int line_width, int clear_dirty)
 {
-    struct bitblt_encoding_context_t encoder_ctx;
-    struct rle_encoder_context;// rle_ctx;
+
     int last_copied_x, last_copied_y;
-    int rlemode;
 
     // estimate how many tickets are needed
     const size_t image_size = (right-x + 1)* (bottom-y+1) * (RP_DISP_DEFAULT_PIXEL_BITS/8);
@@ -776,22 +584,11 @@ int rpusbdisp_usb_try_send_image(struct rpusbdisp_dev * dev, const pixel_type_t 
     printk("bottom=%d",bottom);
     printk("line_width=%d",line_width);
     // do not transmit zero size image
-     if (!image_size) return 1;
-
-    // if (dev->device_fwver >= RP_DISP_FEATURE_RLE_FWVERSION) {
-    //     rlemode = 1;
-    // } else {
-        rlemode = 0;
-    //}
-    
-    if (!_bitblt_encoder_init(&encoder_ctx, dev, image_size, rlemode)) return 0;
-    _bitblt_encode_command_header(&encoder_ctx, dev, x, y, right, bottom, clear_dirty);
-
-    // locate to the begining...
+    if (!image_size) return 1;
     framebuffer += (y*line_width + x);
     {
         for (last_copied_x = right; last_copied_x >= x; --last_copied_x) {
-            pixel_type_t *buf=framebuffer;
+            const pixel_type_t *buf=framebuffer;
             LCD_SetCursor(last_copied_x,y);
             LCD_WriteRAM_Prepare();
             for (last_copied_y = y; last_copied_y <= bottom; ++last_copied_y) {
@@ -801,22 +598,7 @@ int rpusbdisp_usb_try_send_image(struct rpusbdisp_dev * dev, const pixel_type_t 
             framebuffer += 1;
         }  
     }
-    // for (last_copied_y = y; last_copied_y <= bottom; ++last_copied_y) {
-        
-    //     for (last_copied_x = x; last_copied_x <= right; ++last_copied_x) {
-    //  //      pixel_type_t current_pixel_le = cpu_to_le16(*framebuffer);
-
-    //        LCD_DrawPoint(last_copied_x,last_copied_y,*framebuffer);
-    //        ++framebuffer;
-           
-    //     }
-    //     framebuffer += line_width - right - 1 + x;
-    // }
-
-
-    return _bitblt_encoder_flush(&encoder_ctx, dev);
-
-
+    return 1;
 }
 
 static void _on_release_disp_tickets_pool(struct rpusbdisp_dev * dev)
@@ -1024,7 +806,7 @@ if (dev == NULL) {
 err("Out of memory");
 goto error;
 }
-io_addr=ioremap((resource_size_t)0x01c20800,0x400);
+io_addr=ioremap((u8 *)0x01c20800,0x400);
 lcd_init();
 dev->udev = usb_get_dev(interface_to_usbdev(interface));
 dev->interface = interface;
@@ -1129,7 +911,7 @@ return 0;
 static void rpusbdisp_disconnect(struct usb_interface *interface)
 {
 struct rpusbdisp_dev *dev;
-  iounmap(io_addr);
+  iounmap((u8 *)io_addr);
 dev = usb_get_intfdata(interface);
 usb_set_intfdata(interface, NULL);
     _on_del_usb_device(dev);
