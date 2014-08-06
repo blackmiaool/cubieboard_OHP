@@ -1,16 +1,16 @@
 /*
- *    RoboPeak USB LCD Display Linux Driver
- *    
- *    Copyright (C) 2009 - 2013 RoboPeak Team
- *    This file is licensed under the GPL. See LICENSE in the package.
- *
- *    http://www.robopeak.net
- *
- *    Author Shikai Chen
- *
- *   ---------------------------------------------------
- *    Frame Buffer Handlers
- */
+* RoboPeak USB LCD Display Linux Driver
+*
+* Copyright (C) 2009 - 2013 RoboPeak Team
+* This file is licensed under the GPL. See LICENSE in the package.
+*
+* http://www.robopeak.net
+*
+* Author Shikai Chen
+*
+* ---------------------------------------------------
+* Frame Buffer Handlers
+*/
 
 #include "inc/common.h"
 #include "inc/fbhandlers.h"
@@ -19,19 +19,19 @@
 static struct fb_info * _default_fb;
 
 struct dirty_rect {
-    int  left;
-    int  top;
-    int  right;
-    int  bottom;
+    int left;
+    int top;
+    int right;
+    int bottom;
     atomic_t dirty_flag;
-};  
+};
 
 
 enum {
-    DISPLAY_UPDATE_HINT_NONE       = 0,
-    DISPLAY_UPDATE_HINT_BITBLT     = 1,
-    DISPLAY_UPDATE_HINT_FILLRECT   = 2,
-    DISPLAY_UPDATE_HINT_COPYAREA   = 3,
+    DISPLAY_UPDATE_HINT_NONE = 0,
+    DISPLAY_UPDATE_HINT_BITBLT = 1,
+    DISPLAY_UPDATE_HINT_FILLRECT = 2,
+    DISPLAY_UPDATE_HINT_COPYAREA = 3,
 
 };
 
@@ -39,34 +39,34 @@ enum {
 struct rpusbdisp_fb_private {
     _u32 pseudo_palette [16];
     struct dirty_rect dirty_rect;
-    struct mutex      operation_lock;
+    struct mutex operation_lock;
     struct rpusbdisp_dev * binded_usbdev;
 
 
 //lock free area
-    atomic_t               unsync_flag;
+    atomic_t unsync_flag;
 };
 
 
 
 static struct fb_fix_screeninfo _vfb_fix /*__devinitdata*/ = {
-	.id =	    "rpusbdisp-fb",
-	.type =		FB_TYPE_PACKED_PIXELS,
-	.visual =	FB_VISUAL_TRUECOLOR,
-	.accel =	FB_ACCEL_NONE,
+.id =   "rpusbdisp-fb",
+.type = FB_TYPE_PACKED_PIXELS,
+.visual =   FB_VISUAL_TRUECOLOR,
+.accel =    FB_ACCEL_NONE,
     .line_length = RP_DISP_DEFAULT_WIDTH * RP_DISP_DEFAULT_PIXEL_BITS/8,
-    .accel =        FB_ACCEL_NONE,
+    .accel = FB_ACCEL_NONE,
 };
 
 
-static  struct fb_var_screeninfo _var_info /*__devinitdata*/ = {
+static struct fb_var_screeninfo _var_info /*__devinitdata*/ = {
     .xres = RP_DISP_DEFAULT_WIDTH,
     .yres = RP_DISP_DEFAULT_HEIGHT,
     .xres_virtual = RP_DISP_DEFAULT_WIDTH,
     .yres_virtual = RP_DISP_DEFAULT_HEIGHT,
     .width = RP_DISP_DEFAULT_WIDTH,
     .height = RP_DISP_DEFAULT_HEIGHT,
-    .bits_per_pixel =        RP_DISP_DEFAULT_PIXEL_BITS ,
+    .bits_per_pixel = RP_DISP_DEFAULT_PIXEL_BITS ,
     .red = { 0 , 5 , 0 } ,
     .green = { 5 , 6 , 0 } ,
     .blue = { 11 , 5 , 0 } ,
@@ -103,7 +103,7 @@ static void _reset_fb_private(struct rpusbdisp_fb_private * pa) {
 
 
 
-static  void _display_update( struct fb_info *p, int x, int y, int width, int height, int hint, const void * hint_data)
+static void _display_update( struct fb_info *p, int x, int y, int width, int height, int hint, const void * hint_data)
 {
 
     struct rpusbdisp_fb_private * pa = _get_fb_private(p);
@@ -143,7 +143,7 @@ static  void _display_update( struct fb_info *p, int x, int y, int width, int he
             case DISPLAY_UPDATE_HINT_FILLRECT:
             {
                 const struct fb_fillrect * fillrt = (struct fb_fillrect *)hint_data;
-                if (rpusbdisp_usb_try_draw_rect(pa->binded_usbdev, fillrt->dx, fillrt->dy, fillrt->dx + fillrt->width-1, 
+                if (rpusbdisp_usb_try_draw_rect(pa->binded_usbdev, fillrt->dx, fillrt->dy, fillrt->dx + fillrt->width-1,
                     fillrt->dy + fillrt->height-1, fillrt->color, fillrt->rop==ROP_XOR?RPUSBDISP_OPERATION_XOR:RPUSBDISP_OPERATION_COPY))
                 {
                     // data sent, rect the dirty rect
@@ -156,8 +156,8 @@ static  void _display_update( struct fb_info *p, int x, int y, int width, int he
 
             case DISPLAY_UPDATE_HINT_COPYAREA:
             {
-                const  struct fb_copyarea * copyarea = (struct fb_copyarea *)hint_data;
-                if (rpusbdisp_usb_try_copy_area(pa->binded_usbdev, copyarea->sx, copyarea->sy, copyarea->dx,  copyarea->dy, 
+                const struct fb_copyarea * copyarea = (struct fb_copyarea *)hint_data;
+                if (rpusbdisp_usb_try_copy_area(pa->binded_usbdev, copyarea->sx, copyarea->sy, copyarea->dx, copyarea->dy,
                     copyarea->width, copyarea->height))
                 {
                     // data sent, rect the dirty rect
@@ -174,7 +174,7 @@ static  void _display_update( struct fb_info *p, int x, int y, int width, int he
                     // data sent, rect the dirty rect
                     _clear_dirty_rect(&pa->dirty_rect);
 
-                } 
+                }
         }
 
     }
@@ -185,29 +185,29 @@ final:
 }
 
 
-static  void _display_fillrect ( struct fb_info * p, const  struct fb_fillrect * rect)
+static void _display_fillrect ( struct fb_info * p, const struct fb_fillrect * rect)
 {
     sys_fillrect (p, rect);
     _display_update(p, rect->dx, rect->dy, rect->width, rect->height, DISPLAY_UPDATE_HINT_FILLRECT, rect);
 }
 
-static  void _display_imageblit ( struct fb_info * p, const  struct fb_image * image)
+static void _display_imageblit ( struct fb_info * p, const struct fb_image * image)
 {
 
     sys_imageblit (p, image);
     _display_update(p, image->dx, image->dy, image->width, image->height, DISPLAY_UPDATE_HINT_BITBLT, image);
 }
 
-static  void _display_copyarea ( struct fb_info * p, const  struct fb_copyarea * area)
+static void _display_copyarea ( struct fb_info * p, const struct fb_copyarea * area)
 {
 
     sys_copyarea (p, area);
     _display_update(p, area->dx, area->dy, area->width, area->height, DISPLAY_UPDATE_HINT_COPYAREA, area);
 }
 
-static ssize_t _display_write ( struct fb_info * p, const  char * buf __user,
+static ssize_t _display_write ( struct fb_info * p, const char * buf __user,
                                 size_t count, loff_t * ppos)
-{       
+{
     int retval;
     retval = fb_sys_write (p, buf, count, ppos);
 
@@ -217,9 +217,9 @@ static ssize_t _display_write ( struct fb_info * p, const  char * buf __user,
 
 
 static int _display_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
-			 u_int transp, struct fb_info *info)
+u_int transp, struct fb_info *info)
 {
-    #define CNVT_TOHW(val, width) ((((val) << (width)) +0x7FFF-(val)) >> 16)
+#define CNVT_TOHW(val, width) ((((val) << (width)) +0x7FFF-(val)) >> 16)
     int ret = 1 ;
     if (info->var.grayscale)
         red = green = blue = ( 19595 * red + 38470 * green +
@@ -253,7 +253,7 @@ static int _display_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 
 
 static void _display_defio_handler(struct fb_info *info,
-				struct list_head *pagelist) {
+struct list_head *pagelist) {
     struct page *cur;
     struct fb_deferred_io *fbdefio = info->fbdefio;
     int top = RP_DISP_DEFAULT_HEIGHT, bottom = 0;
@@ -262,7 +262,7 @@ static void _display_defio_handler(struct fb_info *info,
     unsigned long page_start;
 
     struct rpusbdisp_fb_private * pa = _get_fb_private(info);
-    if (!pa->binded_usbdev) return; //simply ignore it 
+    if (!pa->binded_usbdev) return; //simply ignore it
     
     list_for_each_entry(cur, &fbdefio->pagelist, lru) {
 
@@ -286,12 +286,12 @@ static void _display_defio_handler(struct fb_info *info,
     _display_update(info, 0, top, info->var.width, bottom - top + 1, DISPLAY_UPDATE_HINT_NONE, NULL);
 }
 
-static  struct fb_ops _display_fbops /*__devinitdata*/ = {
+static struct fb_ops _display_fbops /*__devinitdata*/ = {
     .owner = THIS_MODULE,
     .fb_read = fb_sys_read,
-    .fb_write =     _display_write,
-    .fb_fillrect =  _display_fillrect,
-    .fb_copyarea =  _display_copyarea,
+    .fb_write = _display_write,
+    .fb_fillrect = _display_fillrect,
+    .fb_copyarea = _display_copyarea,
     .fb_imageblit = _display_imageblit,
     .fb_setcolreg = _display_setcolreg,
 };
@@ -299,39 +299,39 @@ static  struct fb_ops _display_fbops /*__devinitdata*/ = {
 
 static void *rvmalloc(unsigned long size)
 {
-	void *mem;
-	unsigned long adr;
+void *mem;
+unsigned long adr;
 
-	size = PAGE_ALIGN(size);
-	mem = vmalloc_32(size);
-	if (!mem)
-		return NULL;
+size = PAGE_ALIGN(size);
+mem = vmalloc_32(size);
+if (!mem)
+return NULL;
 
-	memset(mem, 0, size); /* Clear the ram out, no junk to the user */
-	adr = (unsigned long) mem;
-	while (size > 0) {
-		SetPageReserved(vmalloc_to_page((void *)adr));
-		adr += PAGE_SIZE;
-		size -= PAGE_SIZE;
-	}
+memset(mem, 0, size); /* Clear the ram out, no junk to the user */
+adr = (unsigned long) mem;
+while (size > 0) {
+SetPageReserved(vmalloc_to_page((void *)adr));
+adr += PAGE_SIZE;
+size -= PAGE_SIZE;
+}
 
-	return mem;
+return mem;
 }
 
 static void rvfree(void *mem, unsigned long size)
 {
-	unsigned long adr;
+unsigned long adr;
 
-	if (!mem)
-		return;
+if (!mem)
+return;
 
-	adr = (unsigned long) mem;
-	while ((long) size > 0) {
-		ClearPageReserved(vmalloc_to_page((void *)adr));
-		adr += PAGE_SIZE;
-		size -= PAGE_SIZE;
-	}
-	vfree(mem);
+adr = (unsigned long) mem;
+while ((long) size > 0) {
+ClearPageReserved(vmalloc_to_page((void *)adr));
+adr += PAGE_SIZE;
+size -= PAGE_SIZE;
+}
+vfree(mem);
 }
 
 
@@ -340,12 +340,12 @@ static void rvfree(void *mem, unsigned long size)
 #if 0
 
 static struct platform_driver rpusbdisp_fb_driver = {
-	.probe		= _rpusbdisp_initial_probe,
-	.remove		= __devexit_p(_rpusbdisp_final_remove),
-	.driver		= {
-		.owner	= THIS_MODULE,
-		.name	= "rpusbdisp-fb",
-	},
+.probe  = _rpusbdisp_initial_probe,
+.remove = __devexit_p(_rpusbdisp_final_remove),
+.driver = {
+.owner  = THIS_MODULE,
+.name   = "rpusbdisp-fb",
+},
 };
 #endif
 
@@ -371,11 +371,11 @@ static int _on_create_new_fb(struct fb_info ** out_fb, struct rpusbdisp_dev *dev
     fb->var = _var_info;
 
 
-    fb->fbops       = &_display_fbops;
-    fb->flags       = FBINFO_DEFAULT | FBINFO_VIRTFB;
+    fb->fbops = &_display_fbops;
+    fb->flags = FBINFO_DEFAULT | FBINFO_VIRTFB;
     
     fbmem_size = _var_info.yres * _vfb_fix.line_length; // Correct issue with size allocation (too big)
-    fbmem =  rvmalloc(fbmem_size);
+    fbmem = rvmalloc(fbmem_size);
     if (!fbmem) {
 
         err("Cannot allocate fb memory.\n");
@@ -400,23 +400,23 @@ static int _on_create_new_fb(struct fb_info ** out_fb, struct rpusbdisp_dev *dev
     }
 
 
-	// Since kernel 3.5 the fb_deferred_io structure has a second callback (first_io) that must be set to a valid function or NULL.
-	// To avoid unexpected crash due to a non initialized function pointer do a kzalloc rather than a kmalloc
-	fbdefio = /*kmalloc*/kzalloc(sizeof(struct fb_deferred_io), GFP_KERNEL);
+// Since kernel 3.5 the fb_deferred_io structure has a second callback (first_io) that must be set to a valid function or NULL.
+// To avoid unexpected crash due to a non initialized function pointer do a kzalloc rather than a kmalloc
+fbdefio = /*kmalloc*/kzalloc(sizeof(struct fb_deferred_io), GFP_KERNEL);
 
-	if (fbdefio) {
+if (fbdefio) {
                 // frame rate is configurable through the fps option during the load operation
-		fbdefio->delay = HZ/fps;
-		fbdefio->deferred_io = _display_defio_handler;
-	} else {
+fbdefio->delay = HZ/fps;
+fbdefio->deferred_io = _display_defio_handler;
+} else {
         err("Cannot alloc the fb_deferred_io.\n");
 
          goto failed_nodefio;
 
-	}
+}
 
-	fb->fbdefio = fbdefio;
-	fb_deferred_io_init(fb);
+fb->fbdefio = fbdefio;
+fb_deferred_io_init(fb);
 
 
     _reset_fb_private(_get_fb_private(fb));
@@ -485,7 +485,7 @@ void fbhandler_on_all_transfer_done(struct rpusbdisp_dev * dev)
     fb_pri = _get_fb_private(fb);
     
     if (atomic_read(&fb_pri->dirty_rect.dirty_flag) || atomic_read(&fb_pri->unsync_flag)==1) {
-        _display_update(fb, 0, 0, RP_DISP_DEFAULT_WIDTH, RP_DISP_DEFAULT_HEIGHT,   DISPLAY_UPDATE_HINT_NONE, NULL);
+        _display_update(fb, 0, 0, RP_DISP_DEFAULT_WIDTH, RP_DISP_DEFAULT_HEIGHT, DISPLAY_UPDATE_HINT_NONE, NULL);
     }
 
 }
@@ -508,7 +508,7 @@ int fbhandler_on_new_device(struct rpusbdisp_dev * dev)
         rpusbdisp_usb_set_fbhandle(dev, _default_fb);
 
 
-        ans = 0; 
+        ans = 0;
         mutex_unlock(&fb_pri->operation_lock);
     }
 
