@@ -76,7 +76,7 @@ struct rpusbdisp_dev {
     struct list_head dev_list_node;
     int dev_id;
     struct mutex op_locker;
-    __u8 is_alive;
+
 
     // usb device info
     struct usb_device * udev;
@@ -154,41 +154,12 @@ void * rpusbdisp_usb_get_touchhandle(struct rpusbdisp_dev * dev)
 
 
 
-static void _status_start_querying(struct rpusbdisp_dev * dev);
-
-
-
-
-
-
-static void _on_parse_status_packet(struct rpusbdisp_dev *dev)
-{
-    rpusbdisp_status_packet_header_t * header = (rpusbdisp_status_packet_header_t *)dev->status_in_buffer;
-
-    if (header->packet_type == RPUSBDISP_STATUS_TYPE_NORMAL) {
-        // only supports the normal status packet currently
-        rpusbdisp_status_normal_packet_t * normalpacket = (rpusbdisp_status_normal_packet_t *)header;
-        
-
-
-        if (normalpacket->display_status & RPUSBDISP_DISPLAY_STATUS_DIRTY_FLAG) {
-            fbhandler_set_unsync_flag(dev);
-            schedule_delayed_work(&dev->disp_tickets_pool.completion_work, 0);
-        }
-
-    
-        touchhandler_send_ts_event(dev, le32_to_cpu(normalpacket->touch_x), le32_to_cpu(normalpacket->touch_y), normalpacket->touch_status==RPUSBDISP_TOUCH_STATUS_PRESSED?1:0);
-// printk("X:%d Y:%d S:%d\n", (int)le32_to_cpu(normalpacket->touch_x), (int)le32_to_cpu(normalpacket->touch_y), normalpacket->touch_status);
-    }
-}
 
 static void _on_display_transfer_finished_delaywork(struct work_struct *work)
 {
     struct rpusbdisp_dev * dev = container_of(work, struct rpusbdisp_dev,
 disp_tickets_pool.completion_work.work);
 
-   
-    if (!dev->is_alive) return;
     fbhandler_on_all_transfer_done(dev);
 }
 
@@ -199,77 +170,6 @@ static void _on_display_transfer_finished(struct urb *urb)
     schedule_delayed_work(&dev->disp_tickets_pool.completion_work, 0);
 }
 
-static void _on_status_query_finished(struct urb *urb)
-{
-struct rpusbdisp_dev *dev = urb->context;
-
-    if (!dev->is_alive) {
-        return;
-    }
-
-    // check the status...
-    switch (urb->status) {
-        case 0:
-            // succeed
-            // store the actual transfer size
-            dev->status_in_buffer_recvsize = urb->actual_length;
-            
-
-            _on_parse_status_packet(dev);
-            // notify the waiters..
-            wake_up(&dev->status_wait_queue);
-            break;
-        case -EPIPE:
-          // usb_clear_halt(dev->udev, usb_rcvintpipe(dev->udev, dev->status_in_ep_addr));
-        default:
-            //++dev->urb_status_fail_count;
-            dev->urb_status_fail_count = RPUSBDISP_STATUS_QUERY_RETRY_COUNT;
-    }
-    
-    if (dev->urb_status_fail_count < RPUSBDISP_STATUS_QUERY_RETRY_COUNT) {
-        _status_start_querying(dev);
-    }
-}
-
-
-
-static void _status_start_querying(struct rpusbdisp_dev * dev)
-{
-    unsigned int pipe;
-    int status;
-    struct usb_host_endpoint *ep;
-
-
-    if (!dev->is_alive) {
-        // the device is dead, abort
-        return;
-    }
-
-    if (dev->urb_status_fail_count >= RPUSBDISP_STATUS_QUERY_RETRY_COUNT) {
-        // max retry count has reached, return
-        return;
-    }
-
-    pipe = usb_rcvintpipe(dev->udev, dev->status_in_ep_addr);
-    ep = usb_pipe_endpoint(dev->udev, pipe);
-
-    if (!ep) return;
-
-
-    usb_fill_int_urb(dev->urb_status_query, dev->udev, pipe, dev->status_in_buffer, RPUSBDISP_STATUS_BUFFER_SIZE,
-_on_status_query_finished, dev,
-ep->desc.bInterval);
-    
-    //submit it
-    status = usb_submit_urb(dev->urb_status_query, GFP_ATOMIC);
-    if (status) {
-        if (status == -EPIPE) {
-            usb_clear_halt(dev->udev, pipe);
-        }
-        
-        ++ dev->urb_status_fail_count;
-    }
-}
 
 
 static int _sell_disp_tickets(struct rpusbdisp_dev * dev, struct rpusbdisp_disp_ticket_bundle * bundle, size_t required_count)
@@ -278,7 +178,7 @@ static int _sell_disp_tickets(struct rpusbdisp_dev * dev, struct rpusbdisp_disp_
     int ans = 0;
     struct list_head *node;
     // do not sell tickets when the device has been closed
-    if (!dev->is_alive) return 0;
+
     if (required_count == 0) {
         printk("required for zero ?!\n");
         return 0;
@@ -443,7 +343,7 @@ int rpusbdisp_usb_try_send_image(struct rpusbdisp_dev * dev, const pixel_type_t 
 
     // estimate how many tickets are needed
     const size_t image_size = (right-x + 1)* (bottom-y+1) * (RP_DISP_DEFAULT_PIXEL_BITS/8);
-        printk("image\n");
+        printk("imaage\n");
     printk("1sx=%d",x);
     printk("y=%d",y);
     printk("right=%d",right);
@@ -558,7 +458,6 @@ static int _on_alloc_disp_tickets_pool(struct rpusbdisp_dev * dev)
         
     }
 
-    INIT_DELAYED_WORK(&dev->disp_tickets_pool.completion_work, _on_display_transfer_finished_delaywork);
 
     init_waitqueue_head(&dev->disp_tickets_pool.wait_queue);
     dev->disp_tickets_pool.disp_urb_count = actual_allocated;
@@ -573,54 +472,16 @@ static int _on_new_usb_device(struct rpusbdisp_dev * dev)
 {
 
 
-    if (_on_alloc_disp_tickets_pool(dev) < 0) {
-        dev_info(&dev->interface->dev, "Cannot allocate the display tickets pool.\n");
-        goto disp_tickets_alloc_fail;
-    }
 
-   
-    //_add_usbdev_to_list(dev);
-    dev->dev_id = rpusbdisp_usb_get_device_count();
-    dev->is_alive = 1;
- 
-    fbhandler_on_new_device(dev);
-    touchhandler_on_new_device(dev);
-
-
-    // force all the image to be flush
-    fbhandler_set_unsync_flag(dev);
-    schedule_delayed_work(&dev->disp_tickets_pool.completion_work, 0);
     return 0;
-
-disp_tickets_alloc_fail:
-    usb_free_urb(dev->urb_status_query);
-
-status_urb_alloc_fail:
-    return -ENOMEM;
 }
 
 
 static void _on_del_usb_device(struct rpusbdisp_dev * dev)
 {
 
-    mutex_lock(&dev->op_locker);
-    dev->is_alive = 0;
-    mutex_unlock(&dev->op_locker);
-    
-    touchhandler_on_remove_device(dev);
-    fbhandler_on_remove_device(dev);
 
-    // kill all pending urbs
-    usb_kill_urb(dev->urb_status_query);
-    cancel_delayed_work_sync(&dev->disp_tickets_pool.completion_work);
-
-
-
-    
-    //_del_usbdev_from_list(dev);
-    
-
-    
+    //_del_usbdev_from_list(de  
     _on_release_disp_tickets_pool(dev);
    
     usb_free_urb(dev->urb_status_query);
@@ -635,7 +496,41 @@ int rpusbdisp_usb_get_device_count(void)
     return atomic_read(&_devlist_count);
 }
 
+static int rp_init()
+{
+struct rpusbdisp_dev *dev = NULL;
+    struct usb_host_interface *iface_desc;
+    struct usb_endpoint_descriptor *endpoint;
+    size_t buffer_size;
+    int i;
+    int retval = -ENOMEM;
 
+    /* allocate memory for our device state and initialize it */
+    dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+    if (dev == NULL) {
+    err("Out of memory");
+    goto error;
+    }
+    io_addr=ioremap((u8 *)0x01c20800,0x400);
+    lcd_init();
+    // dev->umake
+ 
+    // add the device to the list
+    INIT_DELAYED_WORK(&dev->disp_tickets_pool.completion_work, _on_display_transfer_finished_delaywork);
+    fbhandler_on_new_device(dev);
+    touchhandler_on_new_device(dev);
+    fbhandler_set_unsync_flag(dev);
+    schedule_delayed_work(&dev->disp_tickets_pool.completion_work, 0);
+
+    return 0;
+
+    error:
+        if (dev) {
+            kfree(dev);
+        }
+    return retval;
+
+}
 static int rpusbdisp_probe(struct usb_interface *interface, const struct usb_device_id *id)
 {
 
@@ -654,14 +549,17 @@ static int rpusbdisp_probe(struct usb_interface *interface, const struct usb_dev
     }
     io_addr=ioremap((u8 *)0x01c20800,0x400);
     lcd_init();
-    dev->udev = usb_get_dev(interface_to_usbdev(interface));
-    dev->interface = interface;
+    // dev->umake
+    dev = usb_get_dev(interface_to_usbdev(interface));
+    // dev->interface = interface;
     usb_set_intfdata(interface, dev);
 
     // add the device to the list
-    if (_on_new_usb_device(dev)) {
-        goto error;
-    }
+    INIT_DELAYED_WORK(&dev->disp_tickets_pool.completion_work, _on_display_transfer_finished_delaywork);
+    fbhandler_on_new_device(dev);
+    touchhandler_on_new_device(dev);
+    fbhandler_set_unsync_flag(dev);
+    schedule_delayed_work(&dev->disp_tickets_pool.completion_work, 0);
 
     return 0;
 
@@ -725,7 +623,8 @@ err("Cannot create the kernel worker thread!\n");
 return -ENOMEM;
 }
 #endif
-    return usb_register(&usbdisp_driver);
+rp_init();
+    return 0;//usb_register(&usbdisp_driver);
 }
 
 
