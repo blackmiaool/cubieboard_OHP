@@ -59,10 +59,7 @@ void EP1_OUT_Callback(void)
 {
     u8 count_out;
     static int i=0;
- //   printf("%d",i++);
-    putchar('E');
-  //  putchar('1');
-   // putchar('O');
+
     
     count_out = GetEPRxCount(ENDP1);
     PMAToUserBufferCopy(buffer_out, ENDP1_RXADDR, count_out);
