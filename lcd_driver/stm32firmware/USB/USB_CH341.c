@@ -8,6 +8,7 @@
 #include "usb_ch341.h"
 #include "usb_init.h"
 #include "delay.h"
+#include "lcd.h"
 static void fill(const u8 *data,u8 lenth);
 static void rect(const u8 *data,u8 lenth);
 static void bitblt(const u8 *data,u8 lenth);
@@ -39,11 +40,10 @@ __inline void draw_point(u8 color)
 }
 void USB_CH341_Init()
 {
-   // delay_ms(200);
+    delay_ms(200);
     Set_USBClock();
 	USB_Interrupts_Config();	
 	USB_Init();	
-   // USB_send((u8 *)"sdf23423423sdf",8);
     delay_ms(1000);
     delay_ms(1000);
 }
@@ -70,6 +70,7 @@ void USB_send(u8 *buf,u8 lenth)
 void USB_receive(const u8 *buf,u8 lenth)
 {
     mode=buf[0]&0x3f;
+    printf("mode=%d",mode);
     switch(mode)
     {
     case 1:
@@ -90,14 +91,14 @@ void USB_receive(const u8 *buf,u8 lenth)
 static void fill(const u8 *data,u8 lenth)
 {
     putchar('f');
-            putchar('\r');
-        putchar('\n'); 
+    putchar('\r');
+    putchar('\n'); 
 }
 static void rect(const u8 *data,u8 lenth)
 {
     putchar('r');
-            putchar('\r');
-        putchar('\n'); 
+    putchar('\r');
+    putchar('\n'); 
 }
 #define mdbg(a) printf(#a"=%d",a)
 static void bitblt(const u8 *data,u8 lenth)
@@ -107,7 +108,7 @@ static void bitblt(const u8 *data,u8 lenth)
     u8 i=0;
     if(data[0]&0x80)
     {
-        putchar('b');
+        //putchar('b');
         //return ;
         x_start=(data[2]<<8)+data[1];
         y_start=(data[4]<<8)+data[3];
@@ -119,8 +120,8 @@ static void bitblt(const u8 *data,u8 lenth)
 //        mdbg(width);
 //        mdbg(height);
 //        mdbg(operation);
-        putchar('\r');
-        putchar('\n');  
+//        putchar('\r');
+//        putchar('\n');  
         pix_index=0;
         for(i=12;i<lenth;i++)
         {
@@ -145,7 +146,7 @@ static void bitblt(const u8 *data,u8 lenth)
 static void copyarea(const u8 *data,u8 lenth)
 {
     putchar('c');
-            putchar('\r');
-        putchar('\n'); 
+    putchar('\r');
+    putchar('\n'); 
 }
 
