@@ -78,12 +78,12 @@ int rpusbdisp_usb_try_send_image(struct rpusbdisp_dev * dev, const pixel_type_t 
 
     // estimate how many tickets are needed
     const size_t image_size = (right-x + 1)* (bottom-y+1) * (RP_DISP_DEFAULT_PIXEL_BITS/8);
-    printk("imaage\n");
-    printk("1sx=%d",x);
-    printk("y=%d",y);
-    printk("right=%d",right);
-    printk("bottom=%d",bottom);
-    printk("line_width=%d",line_width);
+    // printk("imaage\n");
+    // printk("1sx=%d",x);
+    // printk("y=%d",y);
+    // printk("right=%d",right);
+    // printk("bottom=%d",bottom);
+    // printk("line_width=%d",line_width);
     // do not transmit zero size image
     if (!image_size) return 1;
     framebuffer += (y*line_width + x);
