@@ -3,7 +3,7 @@ RoboPeak Mini USB Display
 
 Drivers and Tools for RoboPeak Mini USB Display Project
 
-Visit RoboPeak Website for details.
+Visit RoboPeak Website for detail
 
 Demo Video
 ====================================
